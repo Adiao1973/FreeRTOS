@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "iostream": "cpp",
+        "cstdlib": "cpp",
+        "cmath": "cpp",
+        "vector": "cpp",
+        "xutility": "cpp",
+        "queue": "cpp"
+    },
+    "C_Cpp.errorSquiggles": "Disabled"
+}
