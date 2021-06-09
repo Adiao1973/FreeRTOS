@@ -417,3 +417,150 @@ freertos/source这个组文件，list.c第一次使用需要在freertos文件夹
 #### 2.1.4 实现任务创建函数
 
 * 任务的栈，任务的函数实体，任务的控制块最终需要联系起来才能由系统进行统一调度。那么这个联系的工作就由任务创建函数xTaskCreateStatic()来实现，该函数在task.c中定义，在task.h中声明，所有跟任务相关的函数都在这个文件定义。xTaskCreateStatic()函数的实现如下
+
+> ```c
+> #if(configSUPPORT_STATIC_ALLOCATION == 1)
+>
+> /* 任务创建函数 */
+> TaskHandle_t xTaskCreateStatic(TaskFunction_t pxTaskCode,           /* 任务入口，既任务的函数名称。TaskFunction_t是在projdef.h
+>                                                                      * (projdef.h第一次使用需要在include文件夹下面新建然后添加到
+>                                                                      * 工程freertos/source这个组文件)中重定义的一个数据类型，实际
+>                                                                      * 就是空指针 */ 
+>                                const char * const pcName,           /* 任务名称，字符串形式，方便调试 */
+>                                const uint32_t ulStackDepth,         /* 任务栈大小，单位为字 */
+>                                void * const pvParameters,           /* 任务形参 */
+>                                StackType_t * const puxStackBuffer,  /* 任务栈起始地址 */
+>                                TCB_t * const pxTaskBuffer)          /* 任务控制块指针 */
+> {
+>     TCB_t *pxNewTCB;
+>     /* 定义一个任务句柄xReturn，任务句柄用于指向任务的TCB。任务句柄是数据类型为TaskHandle_t,在task.h中定义，实际上就是一个空指针 */
+>     TaskHandle_t xReturn;
+> 
+>     if((pxTaskBuffer != NULL) && (puxStackBuffer != NULL))
+>     {
+>         pxNewTCB = (TCB_t *) pxTaskBuffer;
+>         pxNewTCB->pxStack = (StackType_t *) puxStackBuffer;
+> 
+>         /* 创建新的任务，该函数在task.c实现 */
+>         prvInitialiseNewTask(pxTaskCode,    /* 任务入口 */
+>                             pcName,         /* 任务名称，字符串形式 */
+>                             ulStackDepth,   /* 任务栈大小，单位为字 */
+>                             pvParameters,   /* 任务形参 */
+>                             &xReturn,       /* 任务句柄 */
+>                             pxNewTCB)       /* 任务栈起始地址 */
+>     }else
+>     {
+>         xReturn = NULL;
+>     }
+>     /* 返回任务句柄，如果任务创建成功，此时xReturn应该指向任务控制块 */
+>     return xReturn;
+> }
+> ```
+
+* FreeRTOS中，任务的创建有两种方法，一种是使用动态创建，一种是使用静态创建。动态创建时，任务控制块和栈的内存是创建任务时动态分配的，任务删除时，内存可以释放。静态创建时，任务控制块和栈的内存需要事先定义好，是静态的内存，任务删除时，内存不能释放。目前我们以静态创建为例，configSUPPORT_STATIC_ALLOCATION在FreeRTOSConfig.h中定义，我们配置为1
+
+* TaskFunction_t是在projdefs.h中重定义的一个数据类型，实际就是空指针，具体实现如下
+
+> ```c
+> #ifndef PROJDEFS_H
+> #define PROJDEFS_H
+> #include "portmacro.h"
+>
+> typedef void(*TaskFunction_t)(void *);
+>
+> #define pdFALSE         ((BaseType_t)0)
+> #define pdTRUE          ((BaseType_t)1)
+>
+> #define pdPASS          (pdTRUE)
+> #define pdFAIL          (pdFALSE)
+>
+> #endif/* PROJDEFS_H */
+> ```
+
+* TaskHandle_t定义如下
+
+> ```c
+> /* 任务句柄 */
+> typedef void * TaskHandle_t;
+> ```
+
+* 调用prvInitialiseNewTask()函数，创建新任务，该函数在task.c中实现，具体实现如下
+
+> ```c
+> /* 创建新的任务 */
+> static void prvInitialiseNewTask(TaskFunction_t pxTaskCode,         /* 任务入口 */
+>                                  const char * const pcName,         /* 任务名称，字符串形式 */
+>                                  const uint32_t ulStackDepth,       /* 任务栈大小，单位为字 */
+>                                  void * const pvParameters,         /* 任务形参 */
+>                                  TaskHandle_t * const pxCreatedTask,/* 任务句柄 */
+>                                  TCB_t *pxNewTCB)                   /* 任务控制块指针 */
+> {
+>     StackType_t *pxTopOfStack;
+>     UBaseType_t x;
+> 
+>     /* 获取栈地址 */
+>     pxTopOfStack = pxNewTCB->pxStack + ( ulStackDepth - ( uint32_t ) 1 );
+>     /* 将栈顶指针向下做8字节对齐，在Cortex-M3（M4或M7）内核的单片机中，因为总线宽度是32位的，通常只要栈保持4字节对
+>     * 齐就行，可这样为啥要8字节？难道有哪些操作是64位的？确实有，那就是浮点运算，所以要8字节对齐（但是目前我们都还
+>      * 没有涉及浮点运算，只是为了后续兼容浮点运行的考虑）。如果栈顶指针是8字节对齐的，在进行向下8字节对齐的时候，指
+>      * 针不会移动，如果不是8字节对齐的，在做向下8字节对齐的时候，就会空出几个字节，不会使用，比如当pxTopOfStack是33
+>     * ，明显不能整除8，进行向下8字节对齐就是32，那么就会空出一个字节不使用 */
+>     pxTopOfStack = ( StackType_t * ) ( ( ( uint32_t ) pxTopOfStack ) & ( ~( ( uint32_t ) 0x0007 ) ) );
+>     /* 将任务的名字存储在TCB中 */
+>     for( x = ( UBaseType_t ) 0; x < ( UBaseType_t ) configMAX_TASK_NAME_LEN; x++ )
+>     {
+>         pxNewTCB->pcTaskName[x] = pcName[x];
+>         if(pcName[x] == 0x00)
+>        {
+>            break;
+>        }
+>    }
+>    /* 任务名字的长度不能超过configMax_TASK_NAME_LEN，并以'0'结尾 */
+>     pxNewTCB->pcTaskName[ configMAX_TASK_NAME_LEN - 1 ] = '\0';
+>     /* 初始化TCB中的xStatelistItem节点，即初始化该节点所在的链表为空，表示节点还没有插入任何链表 */
+>     vListInitialiseItem( &( pxNewTCB->xStateListItem ) );
+>     /* 设置xStateListItem节点的拥有者，即拥有这个节点本身的TCB */
+>     listSET_LIST_ITEM_OWNER( &( pxNewTCB->xStateListItem ), pxNewTCB );
+>     /* 调用pxPortInitialiseStack()函数初始化任务栈，并更新栈顶指针，任务第一次运行的环境参数就
+>      * 存在任务栈中。该函数在port.c（port.c第一次使用需要在freertosportableRVDSARM_CM3（ARM_CM4或者ARM_CM7）
+>      * 文件夹下面新建然后添加到工程freertos/source这个组文件）中定义 */
+>     pxNewTCB->pxTopOfStack = pxPortInitialiseStack( pxTopOfStack, pxTaskCode, pvParameters );
+> 
+>     /* 让任务句柄指向任务控制块 */
+>     if( ( void * ) pxCreatedTask != NULL )
+>     {
+>        *pxCreatedTask = ( TaskHandle_t ) pxNewTCB;
+>     }
+> }
+> ```
+
+* 调用pxPortInitialiseStack()函数初始化任务栈，并更新栈顶指针，任务第一次运行的环境参数就存在任务栈中。该函数在port.c中定义，具体实现如下，任务栈初始化完毕之后，栈空间内部分分布图具体如下
+
+> ```c
+> StackType_t *pxPortInitialiseStack(StackType_t *pxTopOfStack, TaskFunction_t pxCode, void *pvParameters)
+> {
+>     /* 异常发生时，自动加载到CPU寄存器的内容。包括8个寄存器，分别时R0、R1、R2、R3、R12、R14、R15和xPSR的位24，且顺序不能变 */
+>     pxTopOfStack--;
+>     /* xPSR的bit24必须置1,即0x01000000 */
+>     *pxTopOfStack = portINITAL_XPSR;
+>     pxTopOfStack--;
+>     /* 任务的入口地址 */
+>     *pxTopOfStack = ( ( StackType_t ) pxCode ) & portSTART_ADDRESS_MASK;
+>     pxTopOfStack--;
+>     /* 任务的返回地址，通常任务时不会返回的，如果返回了就跳转到preTaskExitError，该函数是一个无限循环 */
+>     *pxTopOfStack = ( StackType_t ) prvTaskExitError;
+>     /* R12，R3,R2 and R1默认初始化为0 */
+>     pxTopOfStack -= 5;
+>     *pxTopOfStack = ( StackType_t ) pvParameters;
+>
+>     /* 异常发生时，手动加载到CPU寄存器的内容 */
+>     pxTopOfStack -= 8;
+>
+>     /* 返回栈顶指针，此时pxTopOfStack指向空闲栈。任务第一次运行时，就是从这个栈指针开始手动加载8个字的内容
+>      * 到CPU寄存器：R4,R5,R6,R7,R8,R9,R10和R11,当推出异常时，栈中剩下的8个字的内容会自动加载到CPU寄存器：
+>      * R0,R1,R2,R3,R12,R14,R15和xPSR的位24.此时PC指针就指向了任务入口地址，从而成果跳转到第一个任务 */
+>     return pxTopOfStack;
+> }
+> ```
+
+![pxPortInitialiseStack](https://doc.embedfire.com/rtos/freertos/zh/latest/_images/tasksw004.png)
