@@ -23,10 +23,10 @@ freertos/source这个组文件，list.c第一次使用需要在freertos文件夹
 >    void * pvContainner; /* 指向该节点所在的链表 */ (5)
 > };
 > typedefstruct xLIST_ITEM ListItem_t
->```
+> ```
 
 <div align=center>
-<img src="https://doc.embedfire.com/rtos/freertos/zh/latest/_images/listsa008.png"
+<img src="https://doc.embedfire.com/rtos/freertos/zh/latest/_images/listsa008.png">
 </div>
 
 * (1):一个辅助值，用于帮助节点做顺序排列。该辅助值的数据类型为TickType_t，在FreeRTOS中，凡是涉及数据类型的地方，FreeRTOS都会将标准的C数据类型用typedef 重新取一个类型名。这些经过重定义的数据类型放在 portmacro.h（portmacro.h第一次使用需要在include文件夹下面新建然后添加到工程freertos/source这个组文件）这个头文件,具体代码如下
@@ -564,3 +564,4 @@ freertos/source这个组文件，list.c第一次使用需要在freertos文件夹
 > ```
 
 ![pxPortInitialiseStack](https://doc.embedfire.com/rtos/freertos/zh/latest/_images/tasksw004.png)
+
